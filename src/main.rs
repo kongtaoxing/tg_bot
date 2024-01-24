@@ -1,13 +1,13 @@
 // This bot throws a dice on each incoming message.
 
 use dotenv::dotenv;
-use std::env;
+use std::{env, error::Error};
 use teloxide::prelude::*;
 
 mod command;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
 
     dotenv().ok();
     
@@ -21,6 +21,8 @@ async fn main() {
         .branch(Update::filter_message().endpoint(command::message_handler));
 
     Dispatcher::builder(bot, handler).enable_ctrlc_handler().build().dispatch().await;
-    // Ok(())
 
+    // command::get_price(2.0, String::from("btcccc")).await?;
+
+    Ok(())
 }

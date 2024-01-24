@@ -1,5 +1,7 @@
-use teloxide::{prelude::*, types::Me, utils::command::BotCommands};
-use std::error::Error;
+use teloxide::{prelude::*, types::{Me, ParseMode::MarkdownV2}, utils::command::BotCommands};
+use std::{env, error::Error};
+use reqwest::{header::{HeaderMap, HeaderValue, USER_AGENT}, Response};
+use serde_json::Value;
 
 #[derive(BotCommands)]
 #[command(rename_rule = "lowercase")]
@@ -30,32 +32,45 @@ pub async fn message_handler(
             }
             Ok(Command::Start) => {
                 // Create a list of buttons and send them.
-                bot.send_message(msg.chat.id, "输入`/help`查看所有命令。").await?;
+                bot.send_message(msg.chat.id, "输入 `/help` 查看所有命令。\n\n本 bot 开发者为 [Coulson](tg://user?id=1481722371)")
+                    .parse_mode(MarkdownV2)
+                    .await?;
             }
 
             Ok(Command::P { name }) => {
-                bot.send_message(msg.chat.id, name.to_string()).await?;
+                let price = get_price(1.0, name.clone()).await?;
+                bot.send_message(msg.chat.id, price.to_string())
+                .parse_mode(MarkdownV2)
+                .await?;
             }
 
             Ok(Command::Calc { param }) => {
                 let cmds: Vec<&str> = param.split_whitespace().collect();
                 if cmds.len() != 2 {
-                    bot.send_message(msg.chat.id, "参数错误，请按照`/calc [数量] [币名]`输入。").await?;
+                    bot.send_message(msg.chat.id, format!("参数错误，请按照`/calc [数量] [币名]`输入。\n\n示例：`/calc 10 BTC`"))
+                        .parse_mode(MarkdownV2)
+                        .await?;
                     return Ok(());
                 }
                 else {
-                    let num = cmds[0].parse::<i32>();
-                    let num = match num {
-                        Ok(num) => num,
+                    let amount = cmds[0].parse::<f32>();
+                    let amount = match amount {
+                        Ok(amount) => amount,
                         Err(_) => {
-                            bot.send_message(msg.chat.id, "参数错误，请按照`/calc [数量] [币名]`输入。").await?;
+                            bot.send_message(msg.chat.id, "参数错误，请按照 /calc [数量] [币名] 输入。\n\n示例：`/calc 10 BTC`")
+                                .parse_mode(MarkdownV2)
+                                .await?;
                             return Ok(());
                         }
                     };
                     let name = cmds[1].to_string();
-                    bot.send_message(msg.chat.id, format!("{num} {name}", num=num, name=name)).await?;
+                    let data = get_price(amount, name.clone()).await?;
+                    println!("data: {:?}", data);
+
+                    bot.send_message(msg.chat.id, format!("`{amount}` 个\n{data}"))
+                        .parse_mode(MarkdownV2)
+                        .await?;
                 }
-                // bot.send_message(msg.chat.id, format!("{num} {name}")).await?;
             }
 
             Err(_) => {
@@ -65,4 +80,46 @@ pub async fn message_handler(
     }
 
     Ok(())
+}
+
+pub async fn get_price(amount: f32, name: String) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let url = format!(
+        "https://pro-api.coinmarketcap.com/v2/tools/price-conversion?symbol={name}&amount={amount}",
+        name = name,
+        amount = amount
+    );
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("reqwest"));
+    headers.insert(
+        "X-CMC_PRO_API_KEY",
+        HeaderValue::from_str(&env::var("CMC_API_KEY").unwrap()).unwrap(),
+    );
+
+    let client = reqwest::Client::new();
+    let res: Response = client.get(&url).headers(headers).send().await?;
+    
+    println!("res status: {:?}", res.status());
+
+    if res.status().is_success() {
+        let price_json_raw = res.text().await?;
+        let price_json: Value = serde_json::from_str(&price_json_raw).unwrap();
+        println!("price_json: {:?}", price_json["data"]);
+        let mut data = String::new();
+        for obj in price_json["data"].as_array().unwrap() {
+            let name = obj["name"].to_string().replace("\"", "");
+            let symbol = obj["symbol"].to_string().replace("\"", "");
+            let price = obj["quote"]["USD"]["price"].to_string();
+            let raw_data = format!("\n`{}`（`{}`）的价格为: {} USD\n", name, symbol, price);
+            data.push_str(&raw_data);
+        }
+        Ok(data.to_string().replace(".", "\\."))
+    } else if res.status().as_u16() == 400 {
+        let price_json_raw = res.text().await?;
+        let price_json: Value = serde_json::from_str(&price_json_raw).unwrap();
+        println!("price_json: {:?}", price_json["status"]["error_message"]);
+        Ok(price_json["status"]["error_message"].to_string().replace("\\", "").replace("\"", ""))
+    } else {
+        println!("error: {:?}", res.status());
+        Ok(String::from("CoinMarketCap API error, please try again later."))
+    }
 }
