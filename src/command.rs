@@ -6,14 +6,16 @@ use serde_json::Value;
 #[derive(BotCommands)]
 #[command(rename_rule = "lowercase")]
 enum Command {
-    /// Display this text
-    Help,
     /// Start
     Start,
+    /// Display this text
+    Help,
     /// get token/coin price
     P { name: String },
     /// Calculate total price
-    Calc { param: String }
+    Calc { param: String },
+    /// information
+    Info
 }
 
 /// Parse the text wrote on Telegram and check if that text is a valid command
@@ -28,7 +30,14 @@ pub async fn message_handler(
         match BotCommands::parse(text, me.username()) {
             Ok(Command::Help) => {
                 // Just send the description of all commands.
-                bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
+                let mut description = String::new();
+                description.push_str(format!("/start - 启动机器人\n").as_str());
+                description.push_str(format!("/help - 查看所有命令\n").as_str());
+                description.push_str(format!("/p [币名] - 获取币价\n").as_str());
+                description.push_str(format!("/calc [数量] [币名] - 计算总价\n").as_str());
+                description.push_str(format!("/info - 机器人信息\n").as_str());
+                println!("description: {:?}", description);
+                bot.send_message(msg.chat.id, description.to_string()).await?;
             }
             Ok(Command::Start) => {
                 // Create a list of buttons and send them.
@@ -71,6 +80,12 @@ pub async fn message_handler(
                         .parse_mode(MarkdownV2)
                         .await?;
                 }
+            }
+
+            Ok(Command::Info) => {
+                bot.send_message(msg.chat.id, "本 bot 能够实时计算特定数量的币种价格。\n\n价格 api 来自 [CoinmarketCap](https://coinmarketcap.com/)\n\n开发者为 [Coulson](tg://user?id=1481722371)")
+                    .parse_mode(MarkdownV2)
+                    .await?;
             }
 
             Err(_) => {
