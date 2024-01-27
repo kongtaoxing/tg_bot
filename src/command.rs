@@ -15,7 +15,9 @@ enum Command {
     /// Calculate total price
     Calc { param: String },
     /// information
-    Info
+    Info,
+    /// get user id
+    Id
 }
 
 /// Parse the text wrote on Telegram and check if that text is a valid command
@@ -36,6 +38,7 @@ pub async fn message_handler(
                 description.push_str(format!("/p [币名] - 获取币价\n").as_str());
                 description.push_str(format!("/calc [数量] [币名] - 计算总价\n").as_str());
                 description.push_str(format!("/info - 机器人信息\n").as_str());
+                description.push_str(format!("/id - 获取用户 telegram id\n").as_str());
                 println!("description: {:?}", description);
                 bot.send_message(msg.chat.id, description.to_string()).await?;
             }
@@ -88,6 +91,12 @@ pub async fn message_handler(
                     .await?;
             }
 
+            Ok(Command::Id) => {
+                bot.send_message(msg.chat.id, format!("你的 telegram id 为：`{}`", msg.chat.id))
+                    .parse_mode(MarkdownV2)
+                    .await?;
+            }
+
             Err(_) => {
                 bot.send_message(msg.chat.id, "Command not found!").await?;
             }
@@ -127,7 +136,7 @@ pub async fn get_price(amount: f32, name: String) -> Result<String, Box<dyn Erro
             let raw_data = format!("\n`{}`（`{}`）的价格为: {} USD\n", name, symbol, price);
             data.push_str(&raw_data);
         }
-        Ok(data.to_string().replace(".", "\\."))
+        Ok(data.to_string().replace(".", "\\.").replace("-", "\\-"))
     } else if res.status().as_u16() == 400 {
         let price_json_raw = res.text().await?;
         let price_json: Value = serde_json::from_str(&price_json_raw).unwrap();
